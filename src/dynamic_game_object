@@ -1,0 +1,74 @@
+import * as THREE from 'three';
+import * as RAPIER from '@dimforge/rapier3d';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+
+class DynamicGameObject {
+    constructor(modelPath, initialPosition, scene, world, onLoadCallback) {
+        this.scene = scene;
+        this.world = world;
+        this.model = null;
+        this.mixer = null;
+
+        // Load the 3D model using Three.js
+        const loader = new GLTFLoader();
+        loader.load(modelPath, (gltf) => {
+            this.model = gltf.scene;
+            this.model.position.set(initialPosition.x, initialPosition.y, initialPosition.z);
+            this.scene.add(this.model);
+
+            // Set up the animation mixer if there are animations
+            if (gltf.animations && gltf.animations.length > 0) {
+                this.mixer = new THREE.AnimationMixer(this.model);
+                this.action = this.mixer.clipAction(gltf.animations[0]);
+                this.action.play();
+            }
+
+            // Create the Rapier rigid body and collider after model is loaded
+            this.createPhysics(initialPosition);
+
+            // Call the onLoad callback if provided
+            if (onLoadCallback) {
+                onLoadCallback(this);
+            }
+        });
+    }
+
+    createPhysics(initialPosition) {
+        // Create the Rapier rigid body
+        const rigidBodyDesc = RAPIER.RigidBodyDesc.dynamic();
+        this.rigidBody = this.world.createRigidBody(rigidBodyDesc);
+        this.rigidBody.setTranslation(initialPosition.x, initialPosition.y, initialPosition.z);
+
+        // Create the Rapier collider
+        const bbox = new THREE.Box3().setFromObject(this.model);
+        const size = new THREE.Vector3();
+        bbox.getSize(size);
+        const halfExtents = size.multiplyScalar(0.5);
+
+        const colliderDesc = RAPIER.ColliderDesc.cuboid(
+            halfExtents.x,
+            halfExtents.y,
+            halfExtents.z
+        );
+        this.collider = this.world.createCollider(colliderDesc, this.rigidBody);
+    }
+
+    update(deltaTime) {
+        if (this.model) {
+            // Update the animation mixer
+            if (this.mixer) {
+                this.mixer.update(deltaTime);
+            }
+
+            // Get the position from Rapier and update the Three.js model position
+            const position = this.rigidBody.translation();
+            this.model.position.set(position.x, position.y, position.z);
+
+            // Optionally, update the rotation if the rigid body rotates
+            const rotation = this.rigidBody.rotation();
+            this.model.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+        }
+    }
+}
+
+export {DynamicGameObject};
